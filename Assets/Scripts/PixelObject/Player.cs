@@ -12,22 +12,22 @@ public class Player : CharacterBase
     /// <summary>
     /// アニメーションパターン数
     /// </summary>
-    private const int PATTERN_NUM_BY_DIRECTION = 3;
+    protected const int PATTERN_NUM_BY_DIRECTION = 3;
 
     /// <summary>
     /// 足踏み用のタイマー
     /// </summary>
-    private float stepTime;
+    protected float stepTime;
 
     /// <summary>
     /// 足踏み用のインデックス
     /// </summary>
-    private int stepSpriteIndex;
+    protected int stepSpriteIndex;
 
     /// <summary>
     /// プレイヤー移動速度
     /// </summary>
-    private float speed;
+    protected float speed;
 
     /// <summary>
     /// 

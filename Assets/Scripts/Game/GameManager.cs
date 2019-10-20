@@ -1,4 +1,7 @@
-﻿using UnityEngine;
+﻿using Assets.Scripts.Scene;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
 
 public class GameManager : MonoBehaviour
 {
@@ -18,19 +21,23 @@ public class GameManager : MonoBehaviour
     private FadeManager fadeManager;
 
     /// <summary>
-    /// 現在のシーン
+    /// シーンのスタック
     /// </summary>
-    private SceneBase currentScene;
+    private Stack<SceneBase> sceneStack;
 
     // Start is called before the first frame update
     void Start()
     {
         fadeManager = new FadeManager(canvas);
+        sceneStack = new Stack<SceneBase>();
 
-        currentScene = gameObject.AddComponent<GameScene>();
-        currentScene.GridGameObject = grid;
-        currentScene.CanvasGameObject = canvas;
-        currentScene.FadeManager = fadeManager;
+        //var firstScene = gameObject.AddComponent<GameScene>();
+        var firstScene = gameObject.AddComponent<BattleScene>();
+        firstScene.GridGameObject = grid;
+        firstScene.CanvasGameObject = canvas;
+        firstScene.FadeManager = fadeManager;
+
+        PushScene(firstScene);
     }
 
     // Update is called once per frame
@@ -42,9 +49,33 @@ public class GameManager : MonoBehaviour
     /// <summary>
     /// 
     /// </summary>
-    /// <param name="param"></param>
-    public void ButtonClick(GameObject param)
+    /// <param name="sceneBase"></param>
+    private void PushScene(SceneBase sceneBase)
     {
-        Debug.Log("ButtonClick::Update");
+        // 現在のシーンを一時停止する
+        if (sceneStack.Count > 0)
+        {
+            var current = sceneStack.Last();
+            current.enabled = false;
+        }
+        sceneStack.Push(sceneBase);
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    private SceneBase PopScene()
+    {
+        if (sceneStack.Count == 0)
+        {
+            return null;
+        }
+        var current = sceneStack.Pop();
+
+        // 次のシーンを再開する
+        var next = sceneStack.Last();
+        next.enabled = true;
+
+        return current;
     }
 }

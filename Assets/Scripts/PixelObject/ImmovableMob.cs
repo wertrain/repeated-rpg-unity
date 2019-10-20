@@ -15,7 +15,7 @@ namespace Assets.Scripts
          /// <summary>
          /// キャラ画像スプライトリスト
          /// </summary>
-        public List<Sprite> sprites;
+        public List<Sprite> sprites = new List<Sprite>();
 
         /// <summary>
         /// 足踏み用のタイマー
