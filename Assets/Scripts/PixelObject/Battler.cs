@@ -10,6 +10,11 @@ namespace Assets.Scripts.PixelObject
     class Battler : BattlerBase
     {
         /// <summary>
+        /// ステータス
+        /// </summary>
+        public Database.BattlerStatus Status { get; set; }
+
+        /// <summary>
         /// キャラ画像スプライトリスト
         /// </summary>
         public List<Sprite> sprites = new List<Sprite>();
@@ -28,7 +33,8 @@ namespace Assets.Scripts.PixelObject
             Attack,
             Damage,
             Win,
-            Loose,
+            Lose,
+            Leave,
             Max
         }
 
@@ -61,6 +67,9 @@ namespace Assets.Scripts.PixelObject
             stateMachine.AddAnyTransition<IdleState>((int)StateEventId.Idle);
             stateMachine.AddTransition<IdleState, AttackState>((int)StateEventId.Attack);
             stateMachine.AddTransition<IdleState, DamageState>((int)StateEventId.Damage);
+            stateMachine.AddTransition<IdleState, WinState>((int)StateEventId.Win);
+            stateMachine.AddTransition<IdleState, LoseState>((int)StateEventId.Lose);
+            stateMachine.AddTransition<WinState, LeaveState>((int)StateEventId.Leave);
             stateMachine.SetStartState<EnterState>();
 
             stepTime = 0.0f;
@@ -110,24 +119,41 @@ namespace Assets.Scripts.PixelObject
         /// <summary>
         /// 
         /// </summary>
-        public void ActionAttack()
+        public bool ActionAttack()
         {
-            stateMachine.SendEvent((int)StateEventId.Attack);
+            return stateMachine.SendEvent((int)StateEventId.Attack);
         }
 
         /// <summary>
         /// 
         /// </summary>
-        public void ActionDamage()
+        public bool ActionDamage()
         {
-            stateMachine.SendEvent((int)StateEventId.Damage);
+            return stateMachine.SendEvent((int)StateEventId.Damage);
         }
 
         /// <summary>
-        /// 空のステート
+        /// 
         /// </summary>
-        private class EmptyState : IceMilkTea.Core.ImtStateMachine<Battler>.State
+        public bool ActionWin()
         {
+            return stateMachine.SendEvent((int)StateEventId.Win);
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public bool ActionLose()
+        {
+            return stateMachine.SendEvent((int)StateEventId.Lose);
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public bool ActionLeave()
+        {
+            return stateMachine.SendEvent((int)StateEventId.Leave);
         }
 
         /// <summary>
@@ -286,9 +312,9 @@ namespace Assets.Scripts.PixelObject
                 tableIndex = 0;
                 postionTable = new List<float>()
                 {
-                    0, 0, 0, 0, 0, 0, 0, 0, 4, 5,
-                    9, 11, 11, 14, 18, 14, 12, 9, 7, 4,
-                    3, 2, 1
+                    00, 00, 00, 00, 00, 00, 00, 00, 04, 05,
+                    09, 11, 11, 14, 18, 14, 12, 09, 07, 04,
+                    03, 02, 01
                 };
 
                 var pos = Context.transform.position;
@@ -332,13 +358,128 @@ namespace Assets.Scripts.PixelObject
         }
 
         /// <summary>
-        /// Damage ステート
+        /// Win ステート
         /// </summary>
         private class WinState : IceMilkTea.Core.ImtStateMachine<Battler>.State
         {
+            /// <summary>
+            /// 
+            /// </summary>
+            private int tableIndex;
+
+            /// <summary>
+            /// 
+            /// </summary>
+            List<float> postionTable;
+
+            /// <summary>
+            /// 
+            /// </summary>
+            private float startPosY;
+
+            protected internal override void Enter()
+            {
+                tableIndex = 0;
+                postionTable = new List<float>()
+                {
+                    00, 00, 00, 00, 00, 00, 00, 00, 04, 05,
+                    09, 11, 11, 14, 18, 14, 12, 09, 07, 04,
+                    00, 00, 00, 00, 00, 00, 00, 00, 04, 05,
+                    09, 11, 11, 14, 18, 14, 12, 09, 07, 04,
+                    03, 02, 01
+                };
+
+                var pos = Context.transform.position;
+                startPosY = pos.y;
+            }
+
             protected internal override void Update()
             {
+                var pos = Context.transform.position;
+                pos.y = startPosY + postionTable[tableIndex];
+                if (++tableIndex > postionTable.Count - 1)
+                {
+                    tableIndex = 0;
 
+                    // Idle ステートへ
+                    Context.stateMachine.SendEvent((int)StateEventId.Leave);
+                }
+                Context.transform.position = pos;
+            }
+
+            protected internal override void Exit()
+            {
+                var pos = Context.transform.position;
+                pos.y = startPosY;
+                Context.transform.position = pos;
+            }
+        }
+
+        /// <summary>
+        /// Lose ステート
+        /// </summary>
+        private class LoseState : IceMilkTea.Core.ImtStateMachine<Battler>.State
+        {
+            protected internal override void Update()
+            {
+                var spriteRenderer = Context.GetComponent<SpriteRenderer>();
+                var color = spriteRenderer.color;
+                color.a = color.a - 0.05f;
+                spriteRenderer.color = color;
+
+                if (color.a < 0)
+                {
+                    // Idle ステートへ
+                    Context.stateMachine.SendEvent((int)StateEventId.Idle);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Leave ステート
+        /// </summary>
+        private class LeaveState : IceMilkTea.Core.ImtStateMachine<Battler>.State
+        {
+            float targetX = 0; 
+
+            protected internal override void Enter()
+            {
+                var offset = Context.GetComponent<SpriteRenderer>().sprite.rect.width;
+
+                if (Context.Direction == Directions.DIR_RIGHT)
+                {
+                    targetX = Screen.width / 2 + offset;
+                }
+                else if (Context.Direction == Directions.DIR_LEFT)
+                {
+                    targetX = 0 - offset;
+                }
+            }
+
+            protected internal override void Update()
+            {
+                var pos = Context.transform.position;
+                if (Context.Direction == Directions.DIR_RIGHT)
+                {
+                    pos.x += Context.speed;
+
+                    if (pos.x > targetX)
+                    {
+                        // Idle ステートへ
+                        Context.stateMachine.SendEvent((int)StateEventId.Idle);
+                    }
+                }
+                else if (Context.Direction == Directions.DIR_LEFT)
+                {
+                    pos.x -= Context.speed;
+
+                    if (pos.x < targetX)
+                    {
+                        // Idle ステートへ
+                        Context.stateMachine.SendEvent((int)StateEventId.Idle);
+                    }
+                }
+                Context.transform.position = pos;
             }
         }
     }

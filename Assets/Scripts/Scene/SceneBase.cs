@@ -4,8 +4,24 @@ using UnityEngine;
 
 namespace Assets.Scripts.Scene
 {
+    /// <summary>
+    /// シーンのパラメータ
+    /// </summary>
+    public class SceneParam
+    {
+
+    }
+
+    /// <summary>
+    /// シーンの基底クラス
+    /// </summary>
     public class SceneBase : MonoBehaviour
     {
+        /// <summary>
+        /// GameManager インスタンス
+        /// </summary>
+        public GameManager GameManager { get; set; }
+
         /// <summary>
         /// グリッド
         /// </summary>
@@ -20,5 +36,11 @@ namespace Assets.Scripts.Scene
         /// フェード管理
         /// </summary>
         public FadeManager FadeManager { get; set; }
-    }
+
+        /// <summary>
+        /// シーンパラメータの設定
+        /// </summary>
+        /// <param name="param"></param>
+        public SceneParam SceneParam { get; set; }
+}
 }

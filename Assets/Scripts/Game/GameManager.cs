@@ -31,12 +31,15 @@ public class GameManager : MonoBehaviour
         fadeManager = new FadeManager(canvas);
         sceneStack = new Stack<SceneBase>();
 
-        //var firstScene = gameObject.AddComponent<GameScene>();
-        var firstScene = gameObject.AddComponent<BattleScene>();
-        firstScene.GridGameObject = grid;
-        firstScene.CanvasGameObject = canvas;
-        firstScene.FadeManager = fadeManager;
+        // プレイヤーの初期ステータスを作成
+        var playerId = Assets.Scripts.Database.PlayerDatabase.Id.Warrior;
+        var playerStatus = Assets.Scripts.Database.PlayerDatabase.GetStatus(playerId);
 
+        //var firstScene = gameObject.AddComponent<GameScene>();
+        var param = new BattleSceneParam();
+        param.PlayerStatus = playerStatus;
+        param.EncountId = Assets.Scripts.Database.EnemyDatabase.Id.Slime;
+        var firstScene = CreateScene<BattleScene>(param);
         PushScene(firstScene);
     }
 
@@ -77,5 +80,31 @@ public class GameManager : MonoBehaviour
         next.enabled = true;
 
         return current;
+    }
+
+    /// <summary>
+    /// シーン作成
+    /// </summary>
+    /// <typeparam name="Type"></typeparam>
+    /// <returns></returns>
+    public Type CreateScene<Type>() where Type : SceneBase
+    {
+        return CreateScene<Type>(null);
+    }
+
+    /// <summary>
+    /// シーン作成
+    /// </summary>
+    /// <typeparam name="Type"></typeparam>
+    /// <returns></returns>
+    public Type CreateScene<Type>(SceneParam param) where Type : SceneBase
+    {
+        Type newScene = gameObject.AddComponent<Type>();
+        newScene.SceneParam = param;
+        newScene.GameManager = this;
+        newScene.GridGameObject = grid;
+        newScene.CanvasGameObject = canvas;
+        newScene.FadeManager = fadeManager;
+        return newScene;
     }
 }

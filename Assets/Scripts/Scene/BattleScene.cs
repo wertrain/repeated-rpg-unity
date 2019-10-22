@@ -1,13 +1,21 @@
 ﻿using Assets.Scripts.PixelObject;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using UnityEngine;
 
 namespace Assets.Scripts.Scene
 {
+    class BattleSceneParam : SceneParam
+    {
+        /// <summary>
+        /// プレイヤーステータス
+        /// </summary>
+        public Database.BattlerStatus PlayerStatus { get; set; }
+
+        /// <summary>
+        /// 遭遇した敵の ID
+        /// </summary>
+        public Database.EnemyDatabase.Id EncountId { get; set; }
+    }
+
     class BattleScene : SceneBase
     {
         /// <summary>
@@ -21,14 +29,26 @@ namespace Assets.Scripts.Scene
         private GameObject battleEnemy;
 
         /// <summary>
+        /// プレイヤーステータス
+        /// </summary>
+        Database.BattlerStatus playerStatus;
+
+        /// <summary>
+        /// 敵のステータス
+        /// </summary>
+        Database.BattlerStatus enemyStatus;
+
+        /// <summary>
         /// 遷移 ID
         /// </summary>
         private enum StateEventId : int
         {
-            Wait,
             Start,
             TurnChange,
             Battle,
+            Win,
+            Lose,
+            Leave,
             Max
         }
 
@@ -64,6 +84,22 @@ namespace Assets.Scripts.Scene
         TurnTypes turnTypes;
 
         /// <summary>
+        /// バトルシーン用のユーティリティ
+        /// </summary>
+        class Util
+        {
+            private static float DAMAGE_REVISED = 0.5f;
+
+            public static int GetDamage(Database.BattlerStatus offensive, Database.BattlerStatus defensive)
+            {
+                return Mathf.CeilToInt(
+                    // 攻撃力 ^ 2 /（攻撃力 + 防御力） * 補正
+                    (offensive.ATK * offensive.ATK) / (offensive.ATK + defensive.DEF) * DAMAGE_REVISED
+                );
+            }
+        }
+
+        /// <summary>
         /// Start is called before the first frame update
         /// </summary>
         void Start()
@@ -78,17 +114,25 @@ namespace Assets.Scripts.Scene
             battleEnemy = Instantiate(enemyPrefab, Vector3.zero, Quaternion.identity);
             battleEnemy.SetActive(false);
 
-            stateMachine = new IceMilkTea.Core.ImtStateMachine<BattleScene>(this);
-
             FadeManager.Blackout();
             FadeManager.FadeIn();
 
             stateMachine = new IceMilkTea.Core.ImtStateMachine<BattleScene>(this);
-            stateMachine.AddTransition<WaitState, BattleState>((int)StateEventId.Wait);
             stateMachine.AddTransition<WaitState, BattleState>((int)StateEventId.Start);
             stateMachine.AddTransition<BattleState, TurnChangeState>((int)StateEventId.TurnChange);
             stateMachine.AddTransition<TurnChangeState, BattleState>((int)StateEventId.Battle);
+            stateMachine.AddTransition<TurnChangeState, WinState>((int)StateEventId.Win);
+            stateMachine.AddTransition<TurnChangeState, LoseState>((int)StateEventId.Lose);
+            stateMachine.AddTransition<WinState, LeaveState>((int)StateEventId.Leave);
+
             stateMachine.SetStartState<WaitState>();
+
+            var playerBattlerScript = battlePlayer.GetComponent<Battler>();
+            var enemyBattlerScript = battleEnemy.GetComponent<Battler>();
+
+            var param = (BattleSceneParam)SceneParam;
+            playerBattlerScript.Status = param.PlayerStatus;
+            enemyBattlerScript.Status = Database.EnemyDatabase.GetStatus(param.EncountId);
 
             turnTypes = TurnTypes.Player;
         }
@@ -189,7 +233,16 @@ namespace Assets.Scripts.Scene
                 {
                     var pos = defensiveBattler.transform.position;
                     pos.y = pos.y - 32.0f;
-                    Context.popupDamageManager.Popup("30", pos);
+
+                    var defensiveBattlerStatus = defensiveBattler.GetComponent<Battler>().Status;
+
+                    var damage = Util.GetDamage(
+                        offensiveBattler.GetComponent<Battler>().Status,
+                        defensiveBattlerStatus);
+
+                    defensiveBattlerStatus.LP = defensiveBattlerStatus.LP - damage;
+
+                    Context.popupDamageManager.Popup(damage.ToString(), pos);
                     stateMachine.SendEvent((int)StateEventId.TurnChange);
                 }
             }
@@ -213,7 +266,15 @@ namespace Assets.Scripts.Scene
         /// </summary>
         private class TurnChangeState : IceMilkTea.Core.ImtStateMachine<BattleScene>.State
         {
+            /// <summary>
+            /// 経過時間
+            /// </summary>
             private float time;
+
+            /// <summary>
+            /// 次のステート
+            /// </summary>
+            private int nextState;
 
             protected internal override void Enter()
             {
@@ -221,6 +282,23 @@ namespace Assets.Scripts.Scene
 
                 var text = "ターン変更";
                 Context.popupDamageManager.Popup(text, new Vector3(0 - (text.Length * 10.0f / 2), 0, 0));
+
+                var playerBattlerScript = Context.battlePlayer.GetComponent<Battler>();
+                var enemyBattlerScript = Context.battleEnemy.GetComponent<Battler>();
+                var playerStatus = playerBattlerScript.Status;
+                var enemyStatus = enemyBattlerScript.Status;
+
+                // 次のステートを決定
+                var nextEventId = StateEventId.Battle;
+                if (playerStatus.LP <= 0)
+                {
+                    nextEventId = StateEventId.Lose;
+                }
+                else if (enemyStatus.LP <= 0)
+                {
+                    nextEventId = StateEventId.Win;
+                }
+                nextState = (int)nextEventId;
             }
 
             protected internal override void Update()
@@ -231,7 +309,98 @@ namespace Assets.Scripts.Scene
                     return;
                 }
 
-                stateMachine.SendEvent((int)StateEventId.Battle);
+                stateMachine.SendEvent(nextState);
+            }
+        }
+
+        /// <summary>
+        /// Win ステート
+        /// </summary>
+        private class WinState : IceMilkTea.Core.ImtStateMachine<BattleScene>.State
+        {
+            /// <summary>
+            /// プレイヤースクリプト
+            /// </summary>
+            Battler playerBattlerScript;
+
+            /// <summary>
+            /// 敵スクリプト
+            /// </summary>
+            Battler enemyBattlerScript;
+
+            protected internal override void Enter()
+            {
+                playerBattlerScript = Context.battlePlayer.GetComponent<Battler>();
+                enemyBattlerScript = Context.battleEnemy.GetComponent<Battler>();
+
+                playerBattlerScript.ActionWin();
+                enemyBattlerScript.ActionLose();
+            }
+
+            protected internal override void Update()
+            {
+                if (playerBattlerScript.IsIdle() && enemyBattlerScript.IsIdle())
+                {
+                    stateMachine.SendEvent((int)StateEventId.Leave);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Lose ステート
+        /// </summary>
+        private class LoseState : IceMilkTea.Core.ImtStateMachine<BattleScene>.State
+        {
+            /// <summary>
+            /// プレイヤースクリプト
+            /// </summary>
+            Battler playerBattlerScript;
+
+            /// <summary>
+            /// 敵スクリプト
+            /// </summary>
+            Battler enemyBattlerScript;
+
+            protected internal override void Enter()
+            {
+                playerBattlerScript = Context.battlePlayer.GetComponent<Battler>();
+                enemyBattlerScript = Context.battleEnemy.GetComponent<Battler>();
+
+                playerBattlerScript.ActionWin();
+            }
+
+            protected internal override void Update()
+            {
+
+            }
+        }
+
+        /// <summary>
+        /// Leave ステート
+        /// </summary>
+        private class LeaveState : IceMilkTea.Core.ImtStateMachine<BattleScene>.State
+        {
+            /// <summary>
+            /// プレイヤースクリプト
+            /// </summary>
+            Battler playerBattlerScript;
+
+            /// <summary>
+            /// 敵スクリプト
+            /// </summary>
+            Battler enemyBattlerScript;
+
+            protected internal override void Enter()
+            {
+                playerBattlerScript = Context.battlePlayer.GetComponent<Battler>();
+                enemyBattlerScript = Context.battleEnemy.GetComponent<Battler>();
+
+                playerBattlerScript.ActionLeave();
+            }
+
+            protected internal override void Update()
+            {
+
             }
         }
     }
